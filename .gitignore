@@ -6,3 +6,4 @@ wsl_myjson
 cmake*
 CMakeCache.txt
 Makefile
+.vscode/settings.json

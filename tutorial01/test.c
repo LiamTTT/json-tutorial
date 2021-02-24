@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "leptjson.h"
+#include "myjson.h"
 
 static int main_ret = 0;
 static int test_count = 0;
