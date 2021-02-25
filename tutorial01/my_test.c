@@ -26,7 +26,7 @@ static int test_pass = 0;
 
 static void test_parse_null() {
     my_value v;
-    v.type = MY_NULL;  /* 这里是传入一个默认值为MY_NULL，在经过my_parse后变成对应值 */
+    v.type = MY_FALSE;  /* 这里是传入一个默认值为MY_NULL，在经过my_parse后变成对应值 */
     EXPECT_EQ_INT(MY_PARSE_OK, my_parse(&v, "null "));
     EXPECT_EQ_INT(MY_NULL, my_get_type(&v));
 }
@@ -34,14 +34,14 @@ static void test_parse_null() {
 /* 加入true和false的单元测试 */
 static void test_parse_true() {
     my_value v;
-    v.type = MY_NULL;
+    v.type = MY_FALSE;
     EXPECT_EQ_INT(MY_PARSE_OK, my_parse(&v, "true"));
     EXPECT_EQ_INT(MY_TRUE, my_get_type(&v));
 }
 
 static void test_parse_false() {
     my_value v;
-    v.type = MY_NULL;
+    v.type = MY_FALSE;
     EXPECT_EQ_INT(MY_PARSE_OK, my_parse(&v, "false"));
     EXPECT_EQ_INT(MY_FALSE, my_get_type(&v));
 }
