@@ -6,7 +6,7 @@ if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 add_library(myjson myjson.c)
-add_executable(myjson_test test.c)
+add_executable(myjson_test my_test.c)
 target_link_libraries(myjson_test myjson)
 
 # cmake_minimum_required (VERSION 2.6)
