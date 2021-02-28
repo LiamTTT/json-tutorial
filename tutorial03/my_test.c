@@ -206,8 +206,8 @@ static void test_access_boolean() {
 static void test_access_number() {
     my_value v;
     my_init(&v);
-    my_set_number(&v, 42);
-    EXPECT_EQ_DOUBLE(42, my_get_number(&v));
+    my_set_number(&v, 42.);
+    EXPECT_EQ_DOUBLE(42., my_get_number(&v));
     EXPECT_EQ_INT(MY_NUMBER, my_get_type(&v));
     my_free(&v);
 }

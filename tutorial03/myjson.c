@@ -12,6 +12,7 @@
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)         ((ch) >= '0' && (ch) <= '9')
 #define ISDIGIT1TO9(ch)     ((ch) >= '1' && (ch) <= '9')
+/* 调用函数返回void指针后强制转换为char指针取地址中的值并将其赋值为ch */
 #define PUTC(c, ch)         do { *(char*)my_context_push(c, sizeof(char)) = (ch); } while(0)
 
 typedef struct {
@@ -106,10 +107,31 @@ static int my_parse_string(my_context* c, my_value* v){
             my_set_string(v, (const char*)my_context_pop(c, len), len);
             c->json = p;
             return MY_PARSE_OK;
+        case '\\':
+            switch (*p++)
+            {   
+            case '\"': PUTC(c, '\"'); break;
+            case '\\': PUTC(c, '\\'); break;
+            case '/': PUTC(c, '/'); break;
+            case 'b': PUTC(c, '\b'); break;
+            case 'f': PUTC(c, '\f'); break;
+            case 'n': PUTC(c, '\n'); break;
+            case 'r': PUTC(c, '\r'); break;            
+            case 't': PUTC(c, '\t'); break;            
+            default:
+                c->top = head;
+                return MY_PARSE_INVALID_STRING_ESCAPE;
+            }
+            break;
         case '\0':
             c->top = head;
             return MY_PARSE_MISS_QUOTATION_MARK;
         default:
+            /* validate the char */
+            if ((unsigned char)ch < 0x20) { 
+                c->top = head;
+                return MY_PARSE_INVALID_STRING_CHAR;
+            }
             /* push every single char to stack */
             PUTC(c, ch);
         }
@@ -194,7 +216,7 @@ void my_set_string(my_value* v, const char* s, size_t len){
 /*boolean process */
 int my_get_boolean(const my_value* v){
     assert(v != NULL && (v->type == MY_FALSE || v->type == MY_TRUE));
-    return v->type == MY_FALSE;
+    return v->type == MY_TRUE;
 }
 
 void my_set_boolean(my_value* v, int b){
