@@ -1,8 +1,13 @@
 #include "myjson.h"
 #include <assert.h>  /* assert() */
-#include <stdlib.h>  /* NULL, strtod() */
+#include <stdlib.h>  /* NULL, strtod(), malloc(), realloc(), free() */
 #include <errno.h>   /* errno, ERANGE */
 #include <math.h>    /* HUGE_VAL */
+#include <string.h>  /* memcpy() */
+
+#ifndef MY_PARSE_STACK_INIT_SIZE
+#define MY_PARSE_STACK_INIT_SIZE = 256
+#endif
 
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)         ((ch) >= '0' && (ch) <= '9')
@@ -10,6 +15,8 @@
 
 typedef struct {
     const char* json;
+    char* stack; /* 维护一个栈用于不定长的字符串存储 */
+    size_t size, top;
 } my_context;
 
 /* ws = *(%x20 / %x09 / %x0A / %x0D) */
@@ -73,12 +80,13 @@ static int my_parse_value(my_context* c, my_value* v) {
     }
 }
 
-/* 提示：这里应该是 JSON-text = ws value ws */
-/* 以下实现没处理最后的 ws 和 LEPT_PARSE_ROOT_NOT_SINGULAR */
 int my_parse(my_value* v, const char* json) {
     my_context c;  /* 创建传递内容的结构体 */
     assert(v != NULL);  /* 保证指针不为空 */
     c.json = json;
+    c.stack = NULL;
+    c.size = c.top = 0;
+    my_init(v);
     v->type = MY_NULL;  /* 错误时默认返回为MY_NULL */
     my_parse_whitespace(&c);  /* 放在这里用于略去头部ws */
     /* return my_parse_value(&c, v); */
