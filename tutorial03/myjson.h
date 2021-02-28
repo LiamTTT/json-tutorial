@@ -13,7 +13,7 @@ typedef struct {
     {
         struct { char*s; size_t len;} s;
         double n;
-    };
+    } u;
     my_type type;
 } my_value;
 
