@@ -1,3 +1,7 @@
+#ifdef _WINDOWS
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,11 +10,7 @@
 static int main_ret = 0;
 static int test_count = 0;
 static int test_pass = 0;
-/* 
-使用宏以保证能够正确的指出出现错误的位置，若使用函数或者内联函数，那么每次错误提示
-的行号将会是指向相同的函数内部，没有提示的作用。effective cpp里推荐做法是尽量不要
-使用宏，因为容易出现难发现的错误，但这里是单元测试设计需要，使用宏将更方便
- */
+
 #define EXPECT_EQ_BASE(equality, expect, actual, format) \
     do {\
         test_count++;\
@@ -31,7 +31,6 @@ static int test_pass = 0;
 
 static void test_parse_null() {
     my_value v;
-    /* 这里两行替代之前v.type = MY_FALSE; */
     my_init(&v);
     my_set_boolean(&v, 0);
     EXPECT_EQ_INT(MY_PARSE_OK, my_parse(&v, "null "));
@@ -57,7 +56,6 @@ static void test_parse_false() {
     my_free(&v);
 }
 
-/* 添加数字的单元测试 */
 #define TEST_NUMBER(expect, json)\
     do {\
         my_value v;\
@@ -67,7 +65,6 @@ static void test_parse_false() {
         EXPECT_EQ_DOUBLE(expect, my_get_number(&v));\
         my_free(&v);\
     } while(0)
-
 
 static void test_parse_number() {
     TEST_NUMBER(0.0, "0");
@@ -99,10 +96,8 @@ static void test_parse_number() {
     TEST_NUMBER(-2.2250738585072014e-308, "-2.2250738585072014e-308");
     TEST_NUMBER( 1.7976931348623157e+308, "1.7976931348623157e+308");  /* Max double */
     TEST_NUMBER(-1.7976931348623157e+308, "-1.7976931348623157e+308");
-
 }
 
-/* 添加字符串解析单元测试 */
 #define TEST_STRING(expect, json)\
     do{\
         my_value v;\
@@ -116,13 +111,16 @@ static void test_parse_number() {
 static void test_parse_string() {
     TEST_STRING("", "\"\"");
     TEST_STRING("Hello", "\"Hello\"");
-/* #if 0 */
     TEST_STRING("Hello\nWorld", "\"Hello\\nWorld\"");
     TEST_STRING("\" \\ / \b \f \n \r \t", "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"");
-/* #endif */
+    TEST_STRING("Hello\0World", "\"Hello\\u0000World\"");
+    TEST_STRING("\x24", "\"\\u0024\"");         /* Dollar sign U+0024 */
+    TEST_STRING("\xC2\xA2", "\"\\u00A2\"");     /* Cents sign U+00A2 */
+    TEST_STRING("\xE2\x82\xAC", "\"\\u20AC\""); /* Euro sign U+20AC */
+    TEST_STRING("\xF0\x9D\x84\x9E", "\"\\uD834\\uDD1E\"");  /* G clef sign U+1D11E */
+    TEST_STRING("\xF0\x9D\x84\x9E", "\"\\ud834\\udd1e\"");  /* G clef sign U+1D11E */
 }
 
-/* 重构测试错误的宏 */
 #define TEST_ERROR(error, json)\
     do {\
         my_value v;\
@@ -132,7 +130,6 @@ static void test_parse_string() {
         EXPECT_EQ_INT(MY_NULL, my_get_type(&v));\
         my_free(&v);\
     } while(0)
-
 
 static void test_parse_expect_value() {
     TEST_ERROR(MY_PARSE_EXPECT_VALUE, "");
@@ -184,6 +181,29 @@ static void test_parse_invalid_string_char() {
     TEST_ERROR(MY_PARSE_INVALID_STRING_CHAR, "\"\x1F\"");
 }
 
+static void test_parse_invalid_unicode_hex() {
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u0\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u01\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u012\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u/000\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\uG000\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u0/00\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u0G00\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u00/0\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u00G0\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u000/\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u000G\"");
+}
+
+static void test_parse_invalid_unicode_surrogate() {
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uDBFF\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\\\\\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\\uDBFF\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\\uE000\"");
+}
+
 static void test_access_null() {
     my_value v;
     my_init(&v);
@@ -222,6 +242,13 @@ static void test_access_string() {
     my_free(&v);
 }
 
+static void test_access() {
+    test_access_null();
+    test_access_boolean();
+    test_access_number();
+    test_access_string();
+}
+
 static void test_parse() {
     test_parse_null();
     test_parse_true();
@@ -235,15 +262,16 @@ static void test_parse() {
     test_parse_missing_quotation_mark();
     test_parse_invalid_string_escape();
     test_parse_invalid_string_char();
-
-    test_access_null();
-    test_access_boolean();
-    test_access_number();
-    test_access_string();
+    test_parse_invalid_unicode_hex();
+    test_parse_invalid_unicode_surrogate();
 }
 
 int main() {
+#ifdef _WINDOWS
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
     test_parse();
+    test_access();
     printf("%d/%d (%3.2f%%) passed\n", test_pass, test_count, test_pass * 100.0 / test_count);
     return main_ret;
 }

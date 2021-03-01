@@ -1,3 +1,7 @@
+#ifdef _WINDOWS
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+#endif
 #include "myjson.h"
 #include <assert.h>  /* assert() */
 #include <stdlib.h>  /* NULL, strtod(), malloc(), realloc(), free() */
@@ -21,7 +25,6 @@ typedef struct {
     size_t size, top;
 } my_context;
 
-/* 堆栈处理 通过移动栈顶指针来操作 */
 static void* my_context_push(my_context* c, size_t size) {
     void* ret;
     assert(size > 0);
