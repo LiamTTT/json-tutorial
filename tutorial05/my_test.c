@@ -152,11 +152,12 @@ static void test_parse_array() {
     EXPECT_EQ_INT(MY_PARSE_OK, my_parse(&v, "[ [ ] , [ 0 ] , [ 0 , 1 ] , [ 0 , 1 , 2 ] ]"));
     EXPECT_EQ_INT(MY_ARRAY, my_get_type(&v));
     EXPECT_EQ_SIZE_T(4, my_get_array_size(&v));
-    for (size_t i=0; i<4; ++i) {
+    size_t i, j;
+    for (i=0; i<4; ++i) {
         my_value *a = my_get_array_element(&v, i);
         EXPECT_EQ_INT(MY_ARRAY, my_get_type(a));
         EXPECT_EQ_SIZE_T(i, my_get_array_size(a));
-        for (size_t j=0; j<i; ++j) {
+        for (j=0; j<i; ++j) {
             my_value *b = my_get_array_element(a, j);
             EXPECT_EQ_INT(MY_NUMBER, my_get_type(b));
             EXPECT_EQ_DOUBLE((double)j, my_get_number(b));
@@ -194,7 +195,7 @@ static void test_parse_invalid_value() {
     TEST_ERROR(MY_PARSE_INVALID_VALUE, "nan");
     
     TEST_ERROR(MY_PARSE_INVALID_VALUE, "[1, ]");
-    TEST_ERROR(MY_PARSE_INVALID_VALUE, "[\"a\", null]");
+    TEST_ERROR(MY_PARSE_INVALID_VALUE, "[\"a\", nul]");
     
 }
 

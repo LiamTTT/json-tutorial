@@ -196,6 +196,9 @@ static int my_parse_string(my_context* c, my_value* v){
         }
     }
 }
+
+static int my_parse_array(my_context* c, my_value* v);
+
 static int my_parse_value(my_context* c, my_value* v) {
     switch (*c->json) {
         case 'n':  return my_parse_literal(c, v, "null", MY_NULL);
@@ -203,8 +206,58 @@ static int my_parse_value(my_context* c, my_value* v) {
         case 'f':  return my_parse_literal(c, v, "false", MY_FALSE);
         default:   return my_parse_number(c, v);
         case '"':  return my_parse_string(c, v);
+        case '[':  return my_parse_array(c, v);
         case '\0': return MY_PARSE_EXPECT_VALUE;
     }
+}
+
+static int my_parse_array(my_context* c, my_value* v) {
+    size_t size = 0;
+    int ret;
+    EXPECT(c, '[');
+    my_parse_whitespace(c);
+    /*  empty */
+    if (*c->json == ']') {
+        v->type = MY_ARRAY;
+        v->u.a.size = 0;
+        v->u.a.e = NULL;
+        c->json++;
+        return MY_PARSE_OK;
+    }
+    /* recursive parse */
+    while (1)
+    {
+        my_value elem;
+        my_init(&elem);
+        /* error */
+        if ((ret = my_parse_value(c, &elem)) != MY_PARSE_OK)
+            break;
+        /* push stack */
+        /* 这一步是为了防止在压栈的时候出现重新分配，导致错误 */
+        memcpy(my_context_push(c, sizeof(my_value)), &elem, sizeof(my_value));
+        ++size;
+        my_parse_whitespace(c);
+        if (*c->json == ',') {
+            c->json++;
+            my_parse_whitespace(c);
+        }
+        else if (*c->json == ']') {
+            v->type = MY_ARRAY;
+            v->u.a.size = size;
+            c->json++;
+            size *= sizeof(my_value); /* 获取当前元素的占用大小 */
+            memcpy(v->u.a.e = (my_value*)malloc(size), my_context_pop(c, size), size);
+            return MY_PARSE_OK;  /* 成功完成解析的时候是不需要释放内存的 */
+        }
+        else {
+            ret = MY_PARSE_MISS_COMMA_OR_SQUARE_BRACKET;
+            break;
+        }
+    }
+    size_t i;
+    for (i=0; i<size; ++i)
+        my_free((my_value*)my_context_pop(c, sizeof(my_value)));
+    return ret;
 }
 
 int my_parse(my_value* v, const char* json) {
@@ -230,8 +283,21 @@ int my_parse(my_value* v, const char* json) {
 
 void my_free(my_value* v) {
     assert(v!=NULL);
-    if (v->type == MY_STRING)
+    size_t i;
+    switch (v->type)
+    {
+    case MY_STRING:
         free(v->u.s.s); 
+        break;
+    case MY_ARRAY:
+        /* 对于数组而言需要逐一释放元素所分配的内存 */
+        for (i = 0; i < v->u.a.size; ++i)
+            my_free(&v->u.a.e[i]);
+        free(v->u.a.e);
+        break;
+    default:
+        break;
+    }
     v->type = MY_NULL;
 }
 
@@ -281,4 +347,15 @@ int my_get_boolean(const my_value* v){
 void my_set_boolean(my_value* v, int b){
     my_free(v);
     v->type = b ? MY_TRUE : MY_FALSE;
+}
+
+/* array process */
+size_t my_get_array_size(const my_value* v) {
+    assert(v!=NULL && v->type == MY_ARRAY);
+    return v->u.a.size;
+}
+
+my_value* my_get_array_element(const my_value* v, size_t index) {
+    assert(index < my_get_array_size(v));
+    return &v->u.a.e[index];
 }

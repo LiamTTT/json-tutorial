@@ -6,7 +6,7 @@ typedef enum { MY_NULL, MY_FALSE, MY_TRUE, MY_NUMBER, MY_STRING, MY_ARRAY, MY_OB
 
 typedef struct my_value my_value;  /* 先声明后使用自身 */
 
-typedef struct {
+struct my_value{
     union
     {   
         struct{ my_value* e; size_t size;} a;
@@ -14,7 +14,7 @@ typedef struct {
         double n;
     } u;
     my_type type;
-} my_value;
+};
 
 enum {
     MY_PARSE_OK = 0,
