@@ -29,6 +29,12 @@ static int test_pass = 0;
 #define EXPECT_TRUE(actual) EXPECT_EQ_BASE((actual) != 0, "true", "false", "%s")
 #define EXPECT_FALSE(actual) EXPECT_EQ_BASE((actual) == 0, "false", "true", "%s")
 
+#if defined(_MSC_VER)
+#define EXPECT_EQ_SIZE_T(expect, actual) EXPECT_EQ_BASE((expect) == (actual), (size_t)expect, (size_t)actual, "%Iu")
+#else
+#define EXPECT_EQ_SIZE_T(expect, actual) EXPECT_EQ_BASE((expect) == (actual), (size_t)expect, (size_t)actual, "%zu")
+#endif
+
 static void test_parse_null() {
     my_value v;
     my_init(&v);
@@ -121,6 +127,44 @@ static void test_parse_string() {
     TEST_STRING("\xF0\x9D\x84\x9E", "\"\\ud834\\udd1e\"");  /* G clef sign U+1D11E */
 }
 
+static void test_parse_array() {
+    my_value v;
+    my_init(&v);
+    EXPECT_EQ_INT(MY_PARSE_OK, my_parse(&v, "[ ]"));
+    EXPECT_EQ_INT(MY_ARRAY, my_get_type(&v));
+    EXPECT_EQ_SIZE_T(0, my_get_array_size(&v));
+    my_free(&v);
+    my_init(&v);
+    EXPECT_EQ_INT(MY_PARSE_OK, my_parse(&v, "[ null , false , true , 123 , \"abc\" ]"));
+    EXPECT_EQ_INT(MY_ARRAY, my_get_type(&v));
+    EXPECT_EQ_SIZE_T(5, my_get_array_size(&v));
+    EXPECT_EQ_INT(MY_NULL, my_get_type(my_get_array_element(&v, 0)));
+    EXPECT_EQ_INT(MY_FALSE, my_get_type(my_get_array_element(&v, 1)));
+    EXPECT_EQ_INT(MY_TRUE, my_get_type(my_get_array_element(&v, 2)));
+    EXPECT_EQ_INT(MY_NUMBER, my_get_type(my_get_array_element(&v, 3)));
+    EXPECT_EQ_INT(MY_STRING, my_get_type(my_get_array_element(&v, 4)));
+    EXPECT_EQ_DOUBLE(123., my_get_number(my_get_array_element(&v, 3)));
+    EXPECT_EQ_STRING("abc", my_get_string(my_get_array_element(&v, 4)), my_get_string_length(my_get_array_element(&v, 4)));
+    EXPECT_EQ_INT(MY_NUMBER, my_get_type(my_get_array_element(&v, 3)));
+    EXPECT_EQ_DOUBLE(123., my_get_number(my_get_array_element(&v, 3)));
+    my_free(&v);
+    my_init(&v);
+    EXPECT_EQ_INT(MY_PARSE_OK, my_parse(&v, "[ [ ] , [ 0 ] , [ 0 , 1 ] , [ 0 , 1 , 2 ] ]"));
+    EXPECT_EQ_INT(MY_ARRAY, my_get_type(&v));
+    EXPECT_EQ_SIZE_T(4, my_get_array_size(&v));
+    for (size_t i=0; i<4; ++i) {
+        my_value *a = my_get_array_element(&v, i);
+        EXPECT_EQ_INT(MY_ARRAY, my_get_type(a));
+        EXPECT_EQ_SIZE_T(i, my_get_array_size(a));
+        for (size_t j=0; j<i; ++j) {
+            my_value *b = my_get_array_element(a, j);
+            EXPECT_EQ_INT(MY_NUMBER, my_get_type(b));
+            EXPECT_EQ_DOUBLE((double)j, my_get_number(b));
+        }
+    }
+    my_free(&v);
+}
+
 #define TEST_ERROR(error, json)\
     do {\
         my_value v;\
@@ -148,6 +192,10 @@ static void test_parse_invalid_value() {
     TEST_ERROR(MY_PARSE_INVALID_VALUE, "inf");
     TEST_ERROR(MY_PARSE_INVALID_VALUE, "NAN");
     TEST_ERROR(MY_PARSE_INVALID_VALUE, "nan");
+    
+    TEST_ERROR(MY_PARSE_INVALID_VALUE, "[1, ]");
+    TEST_ERROR(MY_PARSE_INVALID_VALUE, "[\"a\", null]");
+    
 }
 
 static void test_parse_root_not_singular() {
@@ -194,6 +242,7 @@ static void test_parse_invalid_unicode_hex() {
     TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u00G0\"");
     TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u000/\"");
     TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u000G\"");
+    TEST_ERROR(MY_PARSE_INVALID_UNICODE_HEX, "\"\\u 123\"");
 }
 
 static void test_parse_invalid_unicode_surrogate() {
@@ -202,6 +251,13 @@ static void test_parse_invalid_unicode_surrogate() {
     TEST_ERROR(MY_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\\\\\"");
     TEST_ERROR(MY_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\\uDBFF\"");
     TEST_ERROR(MY_PARSE_INVALID_UNICODE_SURROGATE, "\"\\uD800\\uE000\"");
+}
+
+static void test_parse_miss_comma_or_square_bracket() {
+    TEST_ERROR(MY_PARSE_MISS_COMMA_OR_SQUARE_BRACKET, "[1");
+    TEST_ERROR(MY_PARSE_MISS_COMMA_OR_SQUARE_BRACKET, "[1}");
+    TEST_ERROR(MY_PARSE_MISS_COMMA_OR_SQUARE_BRACKET, "[1 2");
+    TEST_ERROR(MY_PARSE_MISS_COMMA_OR_SQUARE_BRACKET, "[[]");
 }
 
 static void test_access_null() {
@@ -255,6 +311,7 @@ static void test_parse() {
     test_parse_false();
     test_parse_number();
     test_parse_string();
+    test_parse_array();
     test_parse_expect_value();
     test_parse_invalid_value();
     test_parse_root_not_singular();
@@ -264,6 +321,7 @@ static void test_parse() {
     test_parse_invalid_string_char();
     test_parse_invalid_unicode_hex();
     test_parse_invalid_unicode_surrogate();
+    test_parse_miss_comma_or_square_bracket();
 }
 
 int main() {

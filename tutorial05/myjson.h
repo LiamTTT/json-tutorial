@@ -4,9 +4,12 @@
 
 typedef enum { MY_NULL, MY_FALSE, MY_TRUE, MY_NUMBER, MY_STRING, MY_ARRAY, MY_OBJECT } my_type;
 
+typedef struct my_value my_value;  /* 先声明后使用自身 */
+
 typedef struct {
     union
-    {
+    {   
+        struct{ my_value* e; size_t size;} a;
         struct { char*s; size_t len;} s;
         double n;
     } u;
@@ -25,7 +28,9 @@ enum {
     MY_PARSE_INVALID_STRING_ESCAPE,
     MY_PARSE_INVALID_STRING_CHAR,
     MY_PARSE_INVALID_UNICODE_HEX,
-    MY_PARSE_INVALID_UNICODE_SURROGATE
+    MY_PARSE_INVALID_UNICODE_SURROGATE,
+
+    MY_PARSE_MISS_COMMA_OR_SQUARE_BRACKET
 };
 
 
@@ -47,4 +52,6 @@ void my_set_string(my_value* v, const char* s, size_t len);
 int my_get_boolean(const my_value* v);
 void my_set_boolean(my_value* v, int b);
 
+size_t my_get_array_size(const my_value* v);
+my_value* my_get_array_element(const my_value* v, size_t index);
 #endif /* MYJSON_H__ */
