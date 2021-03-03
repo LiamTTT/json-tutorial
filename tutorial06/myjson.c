@@ -187,10 +187,8 @@ static int my_parse_string_raw(my_context* c, char** str, size_t* len) {
             return MY_PARSE_MISS_QUOTATION_MARK;
         default:
             /* validate the char */
-            if ((unsigned char)ch < 0x20) { 
-                c->top = head;
+            if ((unsigned char)ch < 0x20)
                 return MY_PARSE_INVALID_STRING_CHAR;
-            }
             /* push every single char to stack */
             PUTC(c, ch);
         }
@@ -207,6 +205,7 @@ static int my_parse_string(my_context* c, my_value* v) {
 }
 
 static int my_parse_array(my_context* c, my_value* v);
+static int my_parse_object(my_context* c, my_value* v);
 
 static int my_parse_value(my_context* c, my_value* v) {
     switch (*c->json) {
@@ -216,6 +215,7 @@ static int my_parse_value(my_context* c, my_value* v) {
         default:   return my_parse_number(c, v);
         case '"':  return my_parse_string(c, v);
         case '[':  return my_parse_array(c, v);
+        case '{':  return my_parse_object(c, v);
         case '\0': return MY_PARSE_EXPECT_VALUE;
     }
 }
@@ -269,6 +269,90 @@ static int my_parse_array(my_context* c, my_value* v) {
     return ret;
 }
 
+static int my_parse_object(my_context* c, my_value* v) {
+    size_t size, i;
+    my_member tmp_m; /* 真正需要处理是临时的member */
+    int  ret;  /* 用于记录异常返回值，异常时统一需要处理内存的释放问题 */
+    EXPECT(c, '{');
+    my_parse_whitespace(c);
+    /* empty */
+    if (*c->json=='}') {
+        c->json++;
+        v->type = MY_OBJECT;
+        v->u.o.size = 0;
+        v->u.o.m = 0;
+        return MY_PARSE_OK;
+    }
+    size = 0;
+    tmp_m.k = NULL; 
+    while(1) {
+        my_init(&tmp_m.v);
+        char* str;
+        /* 不为空的时候检查是否为字符串 */
+        if (*c->json != '"') {
+            ret = MY_PARSE_MISS_KEY;
+            break;
+        }
+        /* key */
+        if ((ret = my_parse_string_raw(c, &str, &tmp_m.klen)) != MY_PARSE_OK)
+            /* key 解析失败的时候跳出循环 */
+            break;
+        memcpy(tmp_m.k = (char*)malloc(tmp_m.klen+1), str, tmp_m.klen);
+        tmp_m.k[tmp_m.klen] = '\0';
+        my_parse_whitespace(c);
+        /* colon */
+        if (*c->json != ':') {
+            ret = MY_PARSE_MISS_COLON;
+            break;
+        }
+        c->json++;
+        my_parse_whitespace(c);
+        /* value */
+        if ((ret=my_parse_value(c, &tmp_m.v)) != MY_PARSE_OK)
+            break;
+        memcpy(my_context_push(c, sizeof(my_member)), &tmp_m, sizeof(my_member));  /* store */
+        ++size;
+        tmp_m.k = NULL; /* clear */
+        /* comma */
+        my_parse_whitespace(c);
+        if (*c->json == ',') {
+            c->json++;
+            my_parse_whitespace(c);
+        }
+        else if (*c->json == '}') {
+            size_t s = sizeof(my_member) * size;
+            c->json++;
+            v->type = MY_OBJECT;
+            v->u.o.size = size;
+            /* 
+            到这里才算是真正明白malloc和memcpy的配和时候的作用
+            stack压栈的时候是开辟了一个my_member大小的空间，但是不知道放的是什么
+            当然，用户知道是放了一个构造完成的额my_member对象进去
+            所以用户要提供指向当前my_member对象的指针，以及这个指针后面多大的区域是my_member对象
+            memcpy函数陷入内核态，由操作系统完成对整块内存区域的拷贝
+            但是操作系统只管将指针后指定大小的内存拷贝到新的地方，不知道是将这个my_member对象移到了stack中
+            取出时同理
+            */
+            memcpy(v->u.o.m = (my_member*)malloc(s), my_context_pop(c, s), s);
+            return MY_PARSE_OK;
+        }
+        else {
+            ret = MY_PARSE_MISS_COMMA_OR_CURLY_BRACKET;
+            break;
+        }
+    }
+    free(tmp_m.k); /* 释放临时成员的key指向动态内存 */
+    /* 逐成员的出栈，并且检查并释放成员key, value中的动态内存 */
+    for (i = 0; i < size; i++) {
+        my_member* m = (my_member*)my_context_pop(c, sizeof(my_member));
+        free(m->k);
+        my_free(&m->v);
+    }
+    v->type = MY_NULL;
+    /* TODO parsing failed, clear stack */
+    return ret;
+}
+
 int my_parse(my_value* v, const char* json) {
     my_context c;  /* 创建传递内容的结构体 */
     assert(v != NULL);  /* 保证指针不为空 */
@@ -303,6 +387,13 @@ void my_free(my_value* v) {
         for (i = 0; i < v->u.a.size; ++i)
             my_free(&v->u.a.e[i]);
         free(v->u.a.e);
+        break;
+    case MY_OBJECT:
+        for (i = 0; i < v->u.o.size; ++i){
+            free(v->u.o.m[i].k);  /* 比数组多释放一个key */
+            my_free(&v->u.o.m[i].v);
+        }
+        free(v->u.o.m);
         break;
     default:
         break;
@@ -343,7 +434,7 @@ void my_set_string(my_value* v, const char* s, size_t len){
     my_free(v);
     v->u.s.s = (char*)malloc(len+1);
     memcpy(v->u.s.s, s, len);
-    v->u.s.s[len] = "\0";  /* 单独添加的一个结尾空字符 */
+    v->u.s.s[len] = '\0';  /* 单独添加的一个结尾空字符 */
     v->u.s.len = len;
     v->type = MY_STRING;
 }
@@ -376,13 +467,13 @@ size_t my_get_object_size(const my_value* v) {
 }
 const char* my_get_object_key(const my_value* v, size_t index) {
     assert(index < my_get_object_size(v));
-    return (v->u.o.m)[index].k;
+    return v->u.o.m[index].k;
 }
-size_t my_get_object_key_lenth(const my_value* v, size_t index) {
+size_t my_get_object_key_length(const my_value* v, size_t index) {
     assert(index < my_get_object_size(v));
-    return (v->u.o.m)[index].klen;  
+    return v->u.o.m[index].klen;  
 }
 my_value* my_get_object_value(const my_value* v, size_t index) {
     assert(index < my_get_object_size(v));
-    return &(v->u.o.m)[index].v;
+    return &v->u.o.m[index].v;
 }

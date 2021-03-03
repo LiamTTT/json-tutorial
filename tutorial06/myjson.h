@@ -70,7 +70,7 @@ my_value* my_get_array_element(const my_value* v, size_t index);
 
 size_t my_get_object_size(const my_value* v);
 const char* my_get_object_key(const my_value* v, size_t index);
-size_t my_get_object_key_lenth(const my_value* v, size_t index);
+size_t my_get_object_key_length(const my_value* v, size_t index);
 my_value* my_get_object_value(const my_value* v, size_t index);
 
 #endif /* MYJSON_H__ */
