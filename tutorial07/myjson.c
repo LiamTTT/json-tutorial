@@ -8,16 +8,22 @@
 #include <errno.h>   /* errno, ERANGE */
 #include <math.h>    /* HUGE_VAL */
 #include <string.h>  /* memcpy() */
+#include <stdio.h>  /* sprintf() */
 
 #ifndef MY_PARSE_STACK_INIT_SIZE
 #define MY_PARSE_STACK_INIT_SIZE 256
 #endif /* MY_PARSE_STACK_INIT_SIZE */
+
+#ifndef MY_PARSE_STRINGIFY_INIT_SIZE
+#define MY_PARSE_STRINGIFY_INIT_SIZE 256
+#endif /* init str buf size */
 
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)         ((ch) >= '0' && (ch) <= '9')
 #define ISDIGIT1TO9(ch)     ((ch) >= '1' && (ch) <= '9')
 /* 调用函数返回void指针后强制转换为char指针取地址中的值并将其赋值为ch */
 #define PUTC(c, ch)         do { *(char*)my_context_push(c, sizeof(char)) = (ch); } while(0)
+#define PUTS(c, s, len)     memcpy(my_context_push(c, len), s, len) /* 批量压栈 */
 #define STRING_ERROR(ret)   do {c->top = head; return ret;} while(0)
 
 typedef struct {
@@ -404,6 +410,96 @@ void my_free(my_value* v) {
 my_type my_get_type(const my_value* v) {
     assert(v != NULL);
     return v->type;
+}
+
+char* my_stringify_string(my_context* c, const char* s, size_t len){
+    static const char hex_digits[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+    size_t i, size;
+    char* head, *p;
+    assert(s!=NULL);
+    p = head = my_context_push(c, size=len*6+2);  /* "\u00xx..." */
+    *p++ = '"';
+    /* 处理转义字符 */
+    for (i=0; i<len; ++i) {
+        unsigned char ch = (unsigned char)s[i];
+        switch (ch) {
+            case '\"': *p++ = '\\'; *p++ = '\"'; break;
+            case '\\': *p++ = '\\'; *p++ = '\\'; break;
+            case '\b': *p++ = '\\'; *p++ = 'b';  break;
+            case '\f': *p++ = '\\'; *p++ = 'f';  break;
+            case '\n': *p++ = '\\'; *p++ = 'n';  break;
+            case '\r': *p++ = '\\'; *p++ = 'r';  break;
+            case '\t': *p++ = '\\'; *p++ = 't';  break;
+            default:
+                if (ch < 0x20) {
+                    *p++ = '\\'; *p++ = 'u'; *p++ = '0'; *p++ = '0';
+                    *p++ = hex_digits[ch >> 4];
+                    *p++ = hex_digits[ch & 15];
+                }
+                else
+                    *p++ = s[i];
+        }
+    }
+    *p++ = '"';
+    c->top -= size - (p - head);
+}
+
+
+static void my_stringify_value(my_context* c, const my_value* v) {
+    size_t i;
+    switch (v->type)
+    {
+    case MY_NULL:
+        PUTS(c, "null", 4);
+        break;
+    case MY_FALSE:
+        PUTS(c, "false", 5);
+        break;
+    case MY_TRUE:
+        PUTS(c, "true", 4);
+        break;
+    case MY_NUMBER:
+        /* 预设32位栈大小，多余的部分通过返回长度与预设大小的差值调整栈顶指针 */
+        c->top -= 32 - sprintf(my_context_push(c, 32), "%.17g", v->u.n);
+        break;
+    case MY_STRING:
+        my_stringify_string(c, v->u.s.s, v->u.s.len);
+        break;
+    case MY_ARRAY:
+        PUTC(c, '[');
+        for (i=0; i<v->u.a.size; ++i) {
+            if (i>0) PUTC(c, ',');
+            my_stringify_value(c, &v->u.a.e[i]);
+        }
+        PUTC(c, ']');
+        break;
+    case MY_OBJECT:
+        PUTC(c, '{');
+        for (i=0; i<v->u.o.size; ++i) {
+            if (i>0) PUTC(c, ',');
+            my_stringify_string(c, v->u.o.m[i].k, v->u.o.m[i].klen);  /* key */
+            PUTC(c, ':');
+            my_stringify_value(c, &v->u.o.m[i].v);  /* key */
+        }
+        PUTC(c, '}');
+        break;    
+    default: assert(0 && "invalid type");
+    }
+}
+
+char* my_stringify(const my_value* v, size_t* length){
+    /* 接口 */
+    my_context c;
+    assert(v!=NULL);
+    /* init c */
+    c.size = MY_PARSE_STRINGIFY_INIT_SIZE;
+    c.stack = (char*)malloc(c.size);
+    c.top = 0;
+    my_stringify_value(&c, v);
+    if (length!=NULL)
+        *length = c.top;
+    PUTC(&c, '\0');
+    return c.stack;
 }
 
 /* number process */

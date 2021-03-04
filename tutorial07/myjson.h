@@ -55,6 +55,8 @@ void my_free(my_value* v);
 
 my_type my_get_type(const my_value* v);
 
+char* my_stringify(const my_value* v, size_t* length);
+
 double my_get_number(const my_value* v);
 void my_set_number(my_value* v, double n);
 
